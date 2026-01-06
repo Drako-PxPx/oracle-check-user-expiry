@@ -5,12 +5,7 @@ import logging
 import concurrent.futures
 from pathlib import Path
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+
 logger = logging.getLogger(__name__)
 
 def check_db_expiry(db_alias: str, sql_query: str):
@@ -80,7 +75,16 @@ def main():
                         help="Path to the SQL file.")
     parser.add_argument("--workers", type=int, default=5,
                         help="Number of parallel workers.")
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+                        help="Set the logging level.")
     args = parser.parse_args()
+
+    # Configure logging
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
     # Initialize Oracle Client
     try:

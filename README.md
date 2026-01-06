@@ -6,11 +6,6 @@ For this problem I created this script which loops through all databases and rep
 
 The `check_expiry.py` script loops through all TNS entries listed on `config/dblist.lst`, and report the user status on screen.
 
-It reports the status as:
-- **[ALARM]**: If the user is already expired.
-- **[WARN]**: If the user is expiring in less than 5 days.
-- **[OK]**: If the user is not expiring soon.
-
 ## Prerequisites
 
 - **Python 3.x**
@@ -44,3 +39,4 @@ python check_expiry.py --dblist config/prod_dblist.lst --workers 20
 | `--dblist` | `config/dblist.lst` | Path to the file containing the list of database aliases. |
 | `--sql` | `sql/expire_check.sql` | Path to the SQL file containing the expiry check query. |
 | `--workers` | `5` | Number of parallel threads to use for checking databases. |
+| `--log-level` | `INFO` | Logging level displayed on screen, soon to be expired passwords are displayed on WARNING level, all connection errors are reported on ERROR level |
