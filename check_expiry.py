@@ -76,7 +76,7 @@ def check_postgresql_expiry(db_alias: str, sql_query: str):
     except Exception as e:
          logger.error(f"{db_alias} [PostgreSQL]: An unexpected error occurred: {e}")
 
-def check_db_expiry(db_entry: str, sql_query: str):
+def check_db_expiry(db_entry: str, sql_queries: dict):
     """
     Dispatches to the appropriate database engine checker based on the entry format (engine:alias).
     """
@@ -88,6 +88,11 @@ def check_db_expiry(db_entry: str, sql_query: str):
     engine = engine.strip().lower()
     db_alias = db_alias.strip()
     
+    sql_query = sql_queries.get(engine)
+    if not sql_query:
+        logger.error(f"No SQL query loaded for engine '{engine}'.")
+        return
+
     if engine == 'oracle':
         check_oracle_expiry(db_alias, sql_query)
     elif engine == 'postgresql':
@@ -122,11 +127,9 @@ def load_sql_query(file_path: Path) -> str:
         return ""
 
 def main():
-    parser = argparse.ArgumentParser(description="Check Oracle database password expiry.")
+    parser = argparse.ArgumentParser(description="Check database password expiry.")
     parser.add_argument("--dblist", type=Path, default=Path(__file__).parent / "config/dblist.lst",
                         help="Path to the file containing the list of databases.")
-    parser.add_argument("--sql", type=Path, default=Path(__file__).parent / "sql/expire_check.sql",
-                        help="Path to the SQL file.")
     parser.add_argument("--workers", type=int, default=5,
                         help="Number of parallel workers.")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -152,16 +155,28 @@ def main():
         logger.error("No databases to check.")
         return
 
-    sql_query = load_sql_query(args.sql)
-    if not sql_query:
-        logger.error("SQL query is empty or could not be loaded.")
+    engines_to_check = set()
+    for db in databases:
+        if ':' in db:
+            engines_to_check.add(db.split(':', 1)[0].strip().lower())
+
+    sql_dir = Path(__file__).parent / "sql"
+    sql_queries = {}
+    
+    if 'oracle' in engines_to_check:
+        sql_queries['oracle'] = load_sql_query(sql_dir / "orcl_expire_check.sql")
+    if 'postgresql' in engines_to_check:
+        sql_queries['postgresql'] = load_sql_query(sql_dir / "pg_expire_check.sql")
+
+    if not any(sql_queries.values()):
+        logger.error("No valid SQL queries could be loaded.")
         return
 
     logger.info(f"Starting expiry check for {len(databases)} databases with {args.workers} workers...")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
         # Submit all tasks
-        futures = [executor.submit(check_db_expiry, db, sql_query) for db in databases]
+        futures = [executor.submit(check_db_expiry, db, sql_queries) for db in databases]
         
         # Wait for all tasks to complete
         concurrent.futures.wait(futures)
