@@ -1,5 +1,6 @@
 import os
 import oracledb
+import psycopg2
 import argparse
 import logging
 import concurrent.futures
@@ -8,11 +9,11 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-def check_db_expiry(db_alias: str, sql_query: str):
+def check_oracle_expiry(db_alias: str, sql_query: str):
     """
-    Connects to a single database and checks user expiry status.
+    Connects to a single Oracle database and checks user expiry status.
     """
-    logger.info(f"Checking database: {db_alias}...")
+    logger.info(f"[Oracle] Checking database: {db_alias}...")
     try:
         # Connect using external password store (wallet)
         with oracledb.connect(dsn=f"/@{db_alias}") as connection:
@@ -24,22 +25,75 @@ def check_db_expiry(db_alias: str, sql_query: str):
                     expiry_days = row[0]
                     # Handle potential None values if the query returns NULL
                     if expiry_days is None:
-                         logger.warning(f"{db_alias}: Could not determine expiry days (NULL returned).")
+                         logger.warning(f"{db_alias} [Oracle]: Could not determine expiry days (NULL returned).")
                          return
 
                     if expiry_days < 0:
-                        logger.error(f"{db_alias}: User is EXPIRED! (Expiry days: {expiry_days})")
+                        logger.error(f"{db_alias} [Oracle]: User is EXPIRED! (Expiry days: {expiry_days})")
                     elif expiry_days < 5:
-                        logger.warning(f"{db_alias}: User is expiring soon! (Expiry days: {expiry_days})")
+                        logger.warning(f"{db_alias} [Oracle]: User is expiring soon! (Expiry days: {expiry_days})")
                     else:
-                        logger.info(f"{db_alias}: Account status nominal. (Expiry days: {expiry_days})")
+                        logger.info(f"{db_alias} [Oracle]: Account status nominal. (Expiry days: {expiry_days})")
                 else:
-                    logger.info(f"{db_alias}: No rows returned from query.")
+                    logger.info(f"{db_alias} [Oracle]: No rows returned from query.")
 
     except oracledb.Error as e:
-        logger.error(f"Failed to connect or query {db_alias}: {e}")
+        logger.error(f"Failed to connect or query {db_alias} [Oracle]: {e}")
     except Exception as e:
-         logger.error(f"{db_alias}: An unexpected error occurred: {e}")
+         logger.error(f"{db_alias} [Oracle]: An unexpected error occurred: {e}")
+
+def check_postgresql_expiry(db_alias: str, sql_query: str):
+    """
+    Connects to a single PostgreSQL database and checks user expiry status.
+    Uses .pgpass for password authentication.
+    """
+    logger.info(f"[PostgreSQL] Checking database: {db_alias}...")
+    try:
+        # Connect using PostgreSQL connection string/dsn, will automatically use .pgpass file if matching
+        with psycopg2.connect(db_alias) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(sql_query)
+                row = cursor.fetchone()
+                
+                if row:
+                    expiry_days = row[0]
+                    # Handle potential None values if the query returns NULL
+                    if expiry_days is None:
+                         logger.warning(f"{db_alias} [PostgreSQL]: Could not determine expiry days (NULL returned).")
+                         return
+
+                    if expiry_days < 0:
+                        logger.error(f"{db_alias} [PostgreSQL]: User is EXPIRED! (Expiry days: {expiry_days})")
+                    elif expiry_days < 5:
+                        logger.warning(f"{db_alias} [PostgreSQL]: User is expiring soon! (Expiry days: {expiry_days})")
+                    else:
+                        logger.info(f"{db_alias} [PostgreSQL]: Account status nominal. (Expiry days: {expiry_days})")
+                else:
+                    logger.info(f"{db_alias} [PostgreSQL]: No rows returned from query.")
+
+    except psycopg2.Error as e:
+        logger.error(f"Failed to connect or query {db_alias} [PostgreSQL]: {e}")
+    except Exception as e:
+         logger.error(f"{db_alias} [PostgreSQL]: An unexpected error occurred: {e}")
+
+def check_db_expiry(db_entry: str, sql_query: str):
+    """
+    Dispatches to the appropriate database engine checker based on the entry format (engine:alias).
+    """
+    if ':' not in db_entry:
+        logger.error(f"Invalid format for '{db_entry}'. Expected engine:dbname (e.g., oracle:mydb)")
+        return
+        
+    engine, db_alias = db_entry.split(':', 1)
+    engine = engine.strip().lower()
+    db_alias = db_alias.strip()
+    
+    if engine == 'oracle':
+        check_oracle_expiry(db_alias, sql_query)
+    elif engine == 'postgresql':
+        check_postgresql_expiry(db_alias, sql_query)
+    else:
+        logger.error(f"Unsupported database engine '{engine}' for entry '{db_entry}'")
 
 def get_db_list(file_path: Path) -> list[str]:
     """Reads the database list from a file, ignoring comments."""

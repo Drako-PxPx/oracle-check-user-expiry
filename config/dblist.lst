@@ -1,1 +1,6 @@
 # Place all your database aliases here
+# Format: engine:dbname
+#
+# Examples:
+# oracle:orcl
+# postgresql:mydb
